@@ -5,7 +5,9 @@ import json, os
 from openai import OpenAI
 from storage.tables import get_tables_schema
 from api.views import ExecuteQueryView
-from helpers.prompts import SYS_PROMPT_QD as SYS_PROMPT
+from django.urls import reverse
+from django.test import Client
+from vectors.views import HandleQueryView
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -13,6 +15,15 @@ graph_path = r"simplecrm/Neo4j-a71a08f7-Created-2024-07-25.txt"
 graph_schema = get_graph_schema(graph=graph_path)
 
 table_schema = get_tables_schema()
+
+SYS_PROMPT = f"""
+Given the Graph Schema : {graph_schema}
+And the Table Schema : {table_schema}
+Determine the question being asked would be most suitable answered by which document, table, graph or none of these.
+Return your response in single word stating 'Graph', 'Table' or 'Vector'.
+If neither Graph nor Table is suitable, return 'Vector'.
+DO NOT INCLUDE ANY APOLOGIES OR SUGGESTIONS. JUST RETURN THE NAME OF THE CLASSIFIED CATEGORY.
+"""
 
 def classify(question):
     client = OpenAI(api_key=OPENAI_API_KEY)
@@ -35,9 +46,7 @@ def dispatch(request):
             # Parse the incoming request
             data = json.loads(request.body)
             question = data.get("prompt")
-
             print("rcvd question = " ,question)
-            
             if not question:
                 return HttpResponse(
                     "Error: Question is required",
@@ -51,11 +60,13 @@ def dispatch(request):
                 result = response.data
                 print("table result: " ,result)
             elif type == "Graph":
-                result = query(question, graph_path)
+                result = query(request=request)
                 print("graph result: " ,result)
-            elif type == "None":
-                print("None type is yet to be defined")
-                result = "null"
+            elif type == "Vector":
+                view = HandleQueryView.as_view()
+                response = view(request)
+                result = response
+                print("vector :",result)  
             else:
                 result = "Data doesnt belong with us"
 
